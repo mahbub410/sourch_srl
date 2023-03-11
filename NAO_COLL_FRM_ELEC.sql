@@ -1,0 +1,43 @@
+
+-------------
+
+
+SELECT C.CUSTOMER_NAME,A.ADDR_DESCR1||'-'||A.ADDR_DESCR2 ADDRESS, B.CUSTOMER_NUM,C.CONS_EXTG_NUM ACCOUNT_NO, 
+CONNECT_LOAD, SANC_LOAD,SUM(NVL(b.cons_kwh_sr,0) + NVL(b.cons_kwh_pk,0) + NVL(b.cons_kwh_ofpk,0)
+           + NVL(b.old_kwh_sr_cons,0) + NVL(b.old_kwh_pk_cons,0)
+           + NVL(b.old_kwh_ofpk_cons,0) + NVL(b.xf_loss_sr_cons,0) + NVL(b.xf_loss_ofpk_cons,0)
+              + NVL(b.xf_loss_pk_cons,0)+ NVL(b.pfc_sr_cons,0) + NVL(b.pfc_ofpk_cons,0) + NVL(b.pfc_pk_cons,0)
+              + NVL(cons_kwh_mr1,0)+NVL(old_kwh_mr1_cons,0)+NVL(CONS_KWH_MR2,0)+NVL(OLD_KWH_MR2_CONS,0)+NVL(CONS_KWH_MR3,0)+NVL(OLD_KWH_MR3_CONS,0)
+              + NVL(cons_kwh_mr4,0)+NVL(old_kwh_mr4_cons,0)+NVL(pfc_mr1_cons,0)+NVL(pfc_mr2_cons,0)+NVL(pfc_mr3_cons,0)
+              + NVL(pfc_mr4_cons,0)+NVL(xf_loss_mr1_cons,0)+NVL(xf_loss_mr2_cons,0)+NVL(xf_loss_mr3_cons,0)+NVL(xf_loss_mr4_cons,0)
+    ) total_energy_sold, '201901 TO 201912' AS "JAN-2019 TO DEC-2019"
+FROM BC_BILL_IMAGE B,BC_CUSTOMERS C,BC_CUSTOMER_ADDR A
+WHERE B.CUST_ID=C.CUST_ID
+AND B.CUST_ID = A.CUST_ID
+AND B.BILL_CYCLE_CODE  between  '201901' AND '201912'
+AND TARIFF='LT-C1'
+and B.LOCATION_CODE='L1'
+AND B.INVOICE_NUM IS NOT NULL
+AND A.ADDR_TYPE='B'
+AND A.REC_STATUS='C'
+GROUP BY B.CUSTOMER_NUM,C.CUSTOMER_NAME,A.ADDR_DESCR1||'-'||A.ADDR_DESCR2,C.CONS_EXTG_NUM,CONNECT_LOAD, SANC_LOAD 
+ORDER BY 1
+
+
+-----------------------------------------
+
+SELECT * FROM BC_BILL_IMAGE
+WHERE BILL_CYCLE_CODE  between  '201901' AND '201912'
+AND TARIFF='MT-1'
+
+SELECT C.CUSTOMER_NAME,A.ADDR_DESCR1||'-'||A.ADDR_DESCR2 ADDRESS, B.CUSTOMER_NUM,C.CONS_EXTG_NUM ACCOUNT_NO, 
+SUM(NVL(CONNECT_LOAD,0)) CONNECT_LOAD,SUM(NVL(SANC_LOAD,0)) SANC_LOAD,'201901 TO 201912' AS "JAN-2019 TO DEC-2019"
+FROM BC_BILL_IMAGE B,BC_CUSTOMERS C,BC_CUSTOMER_ADDR A
+WHERE B.CUST_ID=C.CUST_ID
+AND B.CUST_ID = A.CUST_ID
+AND B.BILL_CYCLE_CODE  between  '201901' AND '201912'
+AND TARIFF='MT-1'
+AND A.ADDR_TYPE='B'
+--AND A.REC_STATUS='C'
+GROUP BY B.CUSTOMER_NUM,C.CUSTOMER_NAME,A.ADDR_DESCR1||'-'||A.ADDR_DESCR2,C.CONS_EXTG_NUM 
+ORDER BY 1

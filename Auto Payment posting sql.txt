@@ -1,0 +1,705 @@
+CREATE OR REPLACE package body EPAY.DPG_EPAY_PAY_AUTO_POSTING is
+
+PROCEDURE DPD_PAYMENT_POSTING_MASTER(p_run_id NUMBER)  IS
+
+v_Run_Id NUMBER;
+vchErrFlag VARCHAR2(1) :='C';
+vchErrDesc VARCHAR2(500);
+vnmErrNo           NUMBER;
+
+BEGIN
+
+v_Run_Id:=p_run_id;
+
+--SELECT SEQ_EPAY_RUN_ID.NEXTVAL INTO v_Run_Id FROM DUAL;
+
+FOR LOC_LIST IN(SELECT LOCATION_CODE,BILLING_DBLINK,EPAY_DBLINK 
+                          FROM EPAY_LOCATION_MASTER 
+                          WHERE STATUS='A' 
+                          AND BILLING_DBLINK IS NOT NULL
+                          AND EPAY_DBLINK IS NOT NULL
+                          ORDER BY LOCATION_SEQ_NO)
+LOOP
+
+    INSERT INTO EPAY_DATA_TRANS_BATCH_CONTROL
+    (RUN_ID,RUN_BY,RUN_DATE,DATA_TYPE, RUN_STATUS_CODE,LOCATION_CODE)
+    VALUES(v_Run_Id,USER,SYSDATE,'PAYMPOST','04',LOC_LIST.LOCATION_CODE);
+
+    COMMIT;
+    
+    BEGIN
+    
+     dpd_Easy_Pymt_Control (LOC_LIST.LOCATION_CODE,
+                                                  vchErrFlag,
+                                                  vchErrDesc,
+                                                  LOC_LIST.BILLING_DBLINK,
+                                                  LOC_LIST.EPAY_DBLINK);
+                                                  
+         IF vchErrFlag = 'E' THEN
+                INSERT INTO EPAY_DATA_TRANS_ERR_LOG (
+                 RUN_ID,ERROR_NO, ERROR_TXT, DATA_TYPE, RUN_DATE,LOCATION_CODE)
+                VALUES (v_Run_Id, 0, 'Pymt Posting Error:'||vchErrDesc,'PAYMPOST',SYSDATE,LOC_LIST.LOCATION_CODE);
+                COMMIT;
+         END IF;
+    
+    EXCEPTION
+         WHEN OTHERS THEN
+            ROLLBACK;
+         vnmErrNo   := SQLCODE;
+         vchErrDesc := SUBSTR(SQLCODE||' - '||SQLERRM,1,500);
+         INSERT INTO EPAY_DATA_TRANS_ERR_LOG
+         (RUN_ID, ERROR_NO, ERROR_TXT, DATA_TYPE, RUN_DATE,LOCATION_CODE)
+         VALUES(v_Run_Id,vnmErrNo,vchErrDesc,'PAYMPOST',SYSDATE,LOC_LIST.LOCATION_CODE);
+         
+         UPDATE EPAY_DATA_TRANS_BATCH_CONTROL
+         SET RUN_STATUS_CODE='02'
+         WHERE RUN_ID=v_Run_Id
+         AND DATA_TYPE='PAYMPOST'
+         AND  LOCATION_CODE=LOC_LIST.LOCATION_CODE;
+         
+         COMMIT;
+         
+    END;
+    
+
+END LOOP;
+
+END DPD_PAYMENT_POSTING_MASTER;
+
+procedure dpd_Easy_Pymt_Control (pchLocCode varchar2,
+                                                  pchErrFlag out varchar2,
+                                                  pchErrDesc out varchar2,
+                                                  pDBLink IN varchar2,
+                                                  EPAYLink IN varchar2) is
+                                  
+    CUR_PAY_MST  RefCurTyp;
+    v_Rec_BATCH_NO VARCHAR2(20);
+    v_Rec_LOCATION_CODE VARCHAR2(4);
+    v_Rec_PAY_DATE DATE;
+    v_Rec_TOTAL_PDB_AMOUNT number;
+    v_Rec_REVENUE_STAMP_AMOUNT number;
+    v_Rec_NET_PDB_AMOUNT number;
+    v_Rec_TOTAL_GOVT_DUTY number;
+    v_Rec_STATUS varchar2(5);
+    v_Rec_PAY_BANK_CODE varchar2(4);
+    v_Rec_PAY_BRANCH_CODE varchar2(20);
+    v_Rec_USER_NAME  varchar2(20);
+
+    vnmMinScrl    number;
+    vnmMaxScrl       number;
+    vnmTotAmt        number;
+    vnmVat              number;
+    vnmNumOfCons  number;
+    vchBank          varchar2(5);
+    vchBranch        varchar2(10);
+    vnmTotBatch   number :=0;
+    vnmInvalBillNoChk number:=0;
+    myException   Exception;
+    vnmExpChk number;
+
+Begin
+
+
+    OPEN CUR_PAY_MST FOR
+     'SELECT BATCH_NO, LOCATION_CODE,PAY_DATE,TOTAL_PDB_AMOUNT,
+     REVENUE_STAMP_AMOUNT, NET_PDB_AMOUNT, TOTAL_GOVT_DUTY, STATUS,
+     DFN_FUNCTION_BILLING_BANK_CODE@'||EPAYLink||'(PAY_BANK_CODE,PAY_BRANCH_CODE,LOCATION_CODE) PAY_BANK_CODE,
+     DFN_FUNCTION_BILL_BNK_BR_CODE@'||EPAYLink||'(PAY_BANK_CODE,PAY_BRANCH_CODE,LOCATION_CODE) PAY_BRANCH_CODE,USER_NAME
+      FROM EPAY_PAYMENT_MST@'||EPAYLink||'
+      WHERE STATUS IN (''P'',''M'') 
+      AND LOCATION_CODE='''||pchLocCode||'''';
+      
+    loop
+       
+           FETCH CUR_PAY_MST INTO v_Rec_BATCH_NO,v_Rec_LOCATION_CODE,v_Rec_PAY_DATE,v_Rec_TOTAL_PDB_AMOUNT,
+         v_Rec_REVENUE_STAMP_AMOUNT,v_Rec_NET_PDB_AMOUNT,v_Rec_TOTAL_GOVT_DUTY,v_Rec_STATUS,
+         v_Rec_PAY_BANK_CODE,v_Rec_PAY_BRANCH_CODE,v_Rec_USER_NAME;
+         
+         EXIT WHEN CUR_PAY_MST%NOTFOUND;
+
+        vnmTotBatch := vnmTotBatch + 1;
+        
+        Begin
+
+            EXECUTE IMMEDIATE 
+            'SELECT MIN(SCROLL_NO), MAX(SCROLL_NO),
+            SUM(NVL(PDB_AMOUNT,0) + NVL(GOVT_DUTY,0)),
+            SUM(NVL(GOVT_DUTY,0)), COUNT(1)
+            FROM EPAY_PAYMENT_DTL@'||EPAYLink||'
+            WHERE BATCH_NO ='||v_Rec_BATCH_NO
+            INTO   vnmMinScrl, vnmMaxScrl, vnmTotAmt, vnmVAT, vnmNumOfCons;
+            
+        If vnmNumOfCons > 0 then
+
+            If vnmVAT <> v_Rec_TOTAL_GOVT_DUTY and vnmTotAmt <> v_Rec_TOTAL_PDB_AMOUNT+v_Rec_TOTAL_GOVT_DUTY
+               and v_Rec_TOTAL_PDB_AMOUNT<> v_Rec_REVENUE_STAMP_AMOUNT +v_Rec_NET_PDB_AMOUNT then
+
+                 EXECUTE IMMEDIATE 
+                'UPDATE EPAY_PAYMENT_MST@'||EPAYLink||'
+                 SET STATUS = ''M''
+                 WHERE BATCH_NO ='|| v_Rec_BATCH_NO;
+
+                pchErrFlag := 'E';
+                pchErrDesc := 'MisMatched';
+                raise myException;
+            End if;
+
+            dpd_Batch_Load( pchLocCode,     v_Rec_PAY_BANK_CODE,          v_Rec_PAY_BRANCH_CODE,
+                             v_Rec_PAY_DATE,       v_Rec_BATCH_NO,     vnmTotAmt,
+                             vnmVat,              vnmMinScrl,     vnmMaxScrl,
+                             vnmNumOfCons,         pchErrFlag,     pchErrDesc,
+                             pDBLink,   EPAYLink,v_Rec_USER_NAME);
+        End if;
+
+        Exception
+           when myException then
+           exit;
+        end;
+
+    end loop;
+
+    If vnmTotBatch = 0 then
+        pchErrFlag := 'E';
+        pchErrDesc := 'No batch found!';
+    end if;
+
+end dpd_Easy_Pymt_Control;
+
+procedure dpd_Batch_Load(pchLocCode varchar2,
+                           pchBank varchar2,
+                           pchBranch varchar2,
+                         pdtPayDate date,
+                         pchBatchNumEPAY varchar2,
+                         pnmTotAmt number,
+                         pnmVat number,
+                         pnmMinScrl number,
+                         pnmMaxScrl number,
+                         pnmNumOfCons number,
+                         pchErrFlag out varchar2,
+                         pchErrDesc out varchar2,
+                         pDBLink        varchar2,
+                        EPAYLink IN varchar2,
+                        epay_USER_NAME varchar2) is
+
+    vnmSerialNo    number(4);
+    vnmSerialCnt   number(6);
+    vnmStringCnt   number(4);
+    vchBPDBBatchNo  varchar2(10);
+    vnmNetAmt      number;
+    vnmRecIntID    number;
+    vnmPageNo       number;
+
+    vnmBatchNumID    NUMBER;
+    vnmBankAccID    NUMBER;
+    vchBankAccNum    varchar2(30);
+
+    vch_err_flag    varchar2(1);
+    vch_err_msg        varchar2(500) := null;
+
+    vchLocCode                  varchar2(5);
+    vchBranch                    varchar2(10);
+    vchBank                       varchar2(5);
+   epay_source_falge        varchar2(1):='E';
+
+    myException     exception;
+
+begin
+
+    vchLocCode := pchLocCode;
+    vchBank       := pchBank;
+    vchBranch  := pchBranch;
+
+    -- PDB Batch Number Generation
+    vnmSerialNo := dfn_BATCH_NUM_GEN(vchBank, vchBranch,pDBLink,EPAYLink);
+
+    vchBPDBBatchNo := vchBank || vchBranch;
+
+    vnmStringCnt := length(vchBPDBBatchNo);
+    vnmSerialCnt := length( to_char(vnmSerialNo));
+
+    for i in 1..(10 - (vnmStringCnt + vnmSerialCnt)) loop
+        vchBPDBBatchNo := vchBPDBBatchNo||'0';
+    end loop;
+
+    -- Final PDB Batch Number
+    vchBPDBBatchNo := vchBPDBBatchNo || ltrim(rtrim(TO_CHAR(vnmSerialNo)));
+
+    vnmNetAmt := pnmTotAmt - pnmVat;
+
+    vnmSqlSelect:='SELECT ebc.bc_batch_num_id_seq.nextval@'||pDBLink||' FROM dual';
+    
+    EXECUTE IMMEDIATE vnmSqlSelect INTO vnmBatchNumID;
+    
+
+    Begin
+        vnmSqlSelect:='Select bank_account_id,bank_account_num from ebc.bc_accountid_glcode_map@'||pDBLink||
+                      ' Where Location_Code='''||vchLocCode||''' and Bank_Code='''||vchBank||''' and Branch_Code='''||vchBranch||''' and rownum=1';
+                      
+        EXECUTE IMMEDIATE vnmSqlSelect INTO vnmBankAccID,vchBankAccNum;
+       
+    Exception
+      when no_data_found then
+            vch_err_msg := 'Invalid Bank/Branch Code';
+            raise myException;
+      when Others then
+            vch_err_msg := 'Select from ACCOUNTID_GLCODE_MAP '||sqlerrm;
+            raise myException;
+    End;
+
+    Begin
+        vnmSqlInsert:='Insert into ebc.bc_receipt_batch_hdr@'||pDBLink||' ('||
+        'Batch_Num,Location_Code,Bank_Code,'||
+        'Branch_Code,Entered_Batch_Coll_Amt,Entered_Batch_VAT_AMT,'||
+        'DCS_RECPT_DATE,Receipt_Date,batch_status_flag,'||
+        'overall_status_flag,batch_protect_flag,type_flag,'||
+        'batch_num_id,derived_batch_coll_amt,derived_batch_vat_amt,'||
+        'derived_scroll,posted_coll_amt,posted_vat_amt,'||
+        'posted_scroll,manual_coll_amt,manual_vat_amt,'||
+        'manual_scroll,warning_coll_amt,warning_vat_amt,'||
+        'warning_scroll,error_coll_amt,error_vat_amt,'||
+        'error_scroll,cancelled_coll_amt,cancelled_vat_amt,'||
+        'cancelled_scroll,derived_misc_coll_amt,derived_misc_vat_amt,'||
+        'derived_misc_scroll,error_misc_coll_amt,error_misc_vat_amt,'||
+        'error_misc_scroll,posted_misc_coll_amt,posted_misc_vat_amt,'||
+        'posted_misc_scroll,warning_misc_coll_amt,warning_misc_vat_amt,'||
+        'warning_misc_scroll,warning_manual_coll_amt,warning_manual_vat_amt,'||
+        'warning_manual_scroll,error_manual_coll_amt,error_manual_vat_amt,'||
+        'error_manual_scroll,posted_manual_coll_amt,posted_manual_vat_amt,'||
+        'posted_manual_scroll,cancelled_misc_coll_amt,cancelled_misc_vat_amt,'||
+        'cancelled_misc_scroll,cancelled_manual_coll_amt,cancelled_manual_vat_amt,'||
+        'cancelled_manual_scroll,create_date,create_by,source_flag,'||
+        'no_of_pages,first_page,last_page,'||
+        'bank_account_id,bank_account_num,rec_status,'||
+        'net_credit_amt,revenue_stamp_amt) '||
+        'Values( '''||
+        vchBPDBBatchNo||''','''||pchLocCode||''','''||pchBank||''','''||
+        pchBranch||''','||pnmTotAmt||','||pnmVat||','||
+        'sysdate,to_date('''||pdtPayDate||''',''dd-mon-yy''),''M'','||
+        '''M'',''N'',''DCS'','||
+        vnmBatchNumID||',0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,0,0,'||
+        '0,sysdate,'''||epay_USER_NAME||''','''||epay_source_falge||''','||
+        '1,1,1,'||
+        vnmBankAccID||','''||vchBankAccNum||''',''C'','||
+        vnmNetAmt||',0)';
+        
+        EXECUTE IMMEDIATE vnmSqlInsert;
+        
+
+    Exception
+        when Others then
+            vch_err_msg := 'Inserting RECEIPT_BATCH_HDR '||sqlerrm;
+            raise myException;
+
+    End;
+
+    Begin
+        vnmSqlInsert:=
+        'insert into EPAY_RECEIPT_BATCH_HDR_PDB@'||EPAYLink||'('||
+        'BATCH_NUM_PDB,LOCATION_CODE,BANK_CODE,'||
+        'BRANCH_CODE,RECEIPT_DATE,BATCH_COLL_AMT,'||
+        'BATCH_VAT_AMT,REVENUE_STAMP_AMT,NUM_OF_CONS,'||
+        'BATCH_STATUS_FLAG,CREATED_ON,CREATED_BY,'||
+        'MODIFIED_ON,MODIFIED_BY,REC_STATUS,'||
+        'BATCH_NUM_EPAY) '||
+        'VALUES ('''||
+        vchBPDBBatchNo||''','''||pchLocCode||''','''||pchBank||''','''||
+        pchBranch||''',to_date('''||pdtPayDate||''',''dd-mon-yy''),'||pnmTotAmt||','||
+        pnmVat||',0,'||pnmNumOfCons||','||
+        '''G'',sysdate,'''||epay_USER_NAME||''','||
+        'null,null,''C'','''||pchBatchNumEPAY||''')';
+        
+        EXECUTE IMMEDIATE vnmSqlInsert;
+        
+
+    Exception
+        when Others then
+            vch_err_msg := 'Inserting EP_RECEIPT_BATCH_HDR_DPDC '||sqlerrm;
+            raise myException;
+
+    End;
+
+    vnmPageNo:=1;
+
+    vnmSqlSelect:='Select ebc.bc_rec_int_id_seq.nextval@'||pDBLink||' FROM dual';
+    
+    EXECUTE IMMEDIATE vnmSqlSelect INTO vnmRecIntID;
+    
+
+    vch_err_msg := 'Executing RECEIPT_BATCH_CONTROL';
+
+    DPD_Insert_RECEIPT_BATCH_CTRL(  vchBPDBBatchNo,
+                                    vnmPageNo,
+                                    vnmRecIntID,
+                                    'Y',
+                                    'Y',
+                                    vch_err_flag,
+                                    vch_err_msg,
+                                    pDBLink,
+                                    EPAYLink);
+
+    If vch_err_flag = 'E' then
+        raise myException;
+    end if;
+
+    vch_err_msg := 'Executing FPD_RECEIPT_HDR';
+
+    DPD_Insert_RECEIPT_Int_HDR( vchBPDBBatchNo,
+                                vnmPageNo,
+                                vnmRecIntID,
+                                pnmTotAmt,
+                                pnmVat,
+                                pnmMinScrl,
+                                pnmMinScrl,
+                                epay_USER_NAME,
+                                vch_err_flag,
+                                vch_err_msg,
+                                pDBLink,
+                                EPAYLink);
+
+    If vch_err_flag = 'E' then
+           raise myException;
+    end if;
+
+    vch_err_msg := 'Executing FPD_RECEIPT_DTL';
+
+    DPD_Insert_RECEIPT_Int_DTL( vnmRecIntID,
+                                vchBPDBBatchNo,
+                                pchLocCode,
+                                pchBank,
+                                pchBranch,
+                                pdtPayDate,
+                                epay_USER_NAME, -- Connected database user
+                                vch_err_flag,
+                                vch_err_msg,
+                                pDBLink,
+                                EPAYLink);
+
+    If vch_err_flag = 'E' then
+        raise myException;
+    end if;
+
+    EXECUTE IMMEDIATE 
+    'update epay_payment_mst@'||EPAYLink||' 
+     set status = ''T''
+     where batch_no ='||pchBatchNumEPAY||'
+      and location_code='''||pchLocCode||'''';
+
+    commit;
+
+Exception
+    When myException then
+    rollback;
+    pchErrFlag := 'E';
+    pchErrDesc := vch_err_msg;
+
+end dpd_Batch_Load;
+
+
+FUNCTION dfn_BATCH_NUM_GEN( pchBnak IN VARCHAR2,
+                            pchBranch IN VARCHAR2,
+                            pDBLink   IN  varchar2,
+                            EPAYLink IN VARCHAR2)
+RETURN NUMBER IS
+    vvc_dummy_return Number;
+BEGIN
+
+           /* the latest number from the table and add 1 to it. Lock the
+        row till commit point has been reached */
+       vnmSqlSelect:='SELECT    last_serial_num + 1 FROM ebc.BC_DCS_SRL_NUM_GEN@'||pDBLink||
+                  ' WHERE        bank_code = '''||pchBnak||''' AND    branch_code='''||pchBranch||''' FOR UPDATE OF last_serial_num';
+                  
+       EXECUTE IMMEDIATE vnmSqlSelect INTO vvc_dummy_return;
+       
+
+    /* Update the table with the latest number */
+    vnmSqlUpdate:='UPDATE ebc.BC_DCS_SRL_NUM_GEN@'||pDBLink||
+                  ' SET        last_serial_num = '||vvc_dummy_return||
+                  ' WHERE    bank_code = '''||pchBnak||''' AND branch_code = '''||pchBranch||'''';
+                  
+     EXECUTE IMMEDIATE vnmSqlUpdate;
+     
+
+    RETURN(vvc_dummy_return);
+
+          /* If there is no previous data then lock the table in
+          exclusive mode and create a new row */
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+         vvc_dummy_return := 1;
+
+    /* lock the table first and then insert record */
+    vnmSqlInsert:='INSERT INTO ebc.BC_DCS_SRL_NUM_GEN@'||pDBLink|| 
+                  '(bank_code,          branch_code,          last_serial_num)'|| 
+                  ' VALUES ('''||pchBnak||''','''||pchBranch||''','||vvc_dummy_return||')';
+                  
+    EXECUTE IMMEDIATE vnmSqlInsert;
+
+    RETURN(vvc_dummy_return);
+
+END dfn_BATCH_NUM_GEN;
+
+PROCEDURE DPD_Insert_RECEIPT_BATCH_CTRL(pchBPDBBatchNo IN VARCHAR2,
+                                        pnmPageNo IN NUMBER,
+                                        pnmRecIntID IN NUMBER,
+                                        pchOP1_STATUS IN VARCHAR2,
+                                        pchOP2_STATUS IN VARCHAR2,
+                                        pch_err_flag    OUT VARCHAR2,
+                                        pch_err_msg        OUT VARCHAR2,
+                                        pDBLink           varchar2,
+                                        EPAYLink IN VARCHAR2) IS
+BEGIN
+
+    pch_err_flag:= 'C';
+    pch_err_msg := NULL;
+
+    vnmSqlInsert:='INSERT INTO ebc.BC_RECEIPT_BATCH_CONTROL@'||pDBLink||
+                  '(batch_num,page_num,rec_int_id, OP1_STATUS,OP2_STATUS)'||
+                  ' VALUES ('''||pchBPDBBatchNo||''','||pnmPageNo||','||pnmRecIntID||','''||pchOP1_STATUS||''','''||pchOP2_STATUS||''')';
+                  
+     EXECUTE IMMEDIATE vnmSqlInsert;
+
+EXCEPTION
+    WHEN OTHERS THEN
+    pch_err_flag:= 'E';
+    pch_err_msg := 'Error: Inserting fail(RECEIPT_BATCH_CONTROL)'||SUBSTR(SQLERRM,1,100);
+
+END DPD_Insert_RECEIPT_BATCH_CTRL;
+
+PROCEDURE DPD_Insert_RECEIPT_Int_HDR(   pchBPDBBatchNo     IN VARCHAR2,
+                                        pnmPageNo         IN NUMBER,
+                                        pnmRecIntID     IN NUMBER,
+                                        pnmTot_Amt         IN NUMBER,
+                                        pnmVAT_Amt         IN NUMBER,
+                                        pchMN_SCROLL     IN VARCHAR2,
+                                        pchMX_SCROLL     IN VARCHAR2,
+                                        p_user               IN VARCHAR2,
+                                        pch_err_flag    OUT VARCHAR2,
+                                        pch_err_msg        OUT VARCHAR2,
+                                        pDBLink   IN  varchar2,
+                                        EPAYLink IN VARCHAR2) IS
+
+vchTabName VARCHAR2(100);
+
+BEGIN
+    pch_err_flag:= 'C';
+    pch_err_msg := NULL;
+
+    vchTabName := 'RECEIPT1_INT_HDR Batch No:'||pchBPDBBatchNo;
+
+    vnmSqlInsert:=
+    'INSERT INTO ebc.BC_RECEIPT1_INT_HDR@'||pDBLink||
+    '(batch_num,                   page_num,               rec_int_id,'||
+    'Page_Coll_Amt,                 Page_VAT_Amt,             First_Scroll,'||
+    'Last_Scroll,                 Page_Status_Flag,         Page_Protect_Flag,'||
+    'Create_date,                 Create_By,                 Rec_Status)'||
+    'VALUES ('''||
+    pchBPDBBatchNo||''',         '||pnmPageNo||',              '||pnmRecIntID||','||
+    pnmTot_Amt||',                 '||pnmVAT_Amt||',             '''||pchMN_SCROLL||''','''||
+    pchMX_SCROLL||''',                 ''M'',                     ''N'','||
+    'SYSDATE,                     '''||p_user||''',                 ''P'')';
+    
+    EXECUTE IMMEDIATE vnmSqlInsert;
+    
+
+    vchTabName := 'RECEIPT2_INT_HDR Batch No:'||pchBPDBBatchNo;
+
+    vnmSqlInsert:=
+    'INSERT INTO ebc.BC_RECEIPT2_INT_HDR@'||pDBLink||
+    ' (batch_num,                   page_num,               rec_int_id,'||
+    'Page_Coll_Amt,                 Page_VAT_Amt,             First_Scroll,'||
+    'Last_Scroll,                 Page_Status_Flag,         Page_Protect_Flag,'||
+    'Create_date,                 Create_By,                 Rec_Status) '||
+    'VALUES ('''||
+    pchBPDBBatchNo||''',         '||pnmPageNo||',             '||pnmRecIntID||','||
+    pnmTot_Amt||',                 '||pnmVAT_Amt||',             '''||pchMN_SCROLL||''','''||
+    pchMX_SCROLL||''',                 ''M'',                     ''N'','||
+    'SYSDATE,                     '''||p_user||''',                 ''P'')';
+    
+    EXECUTE IMMEDIATE vnmSqlInsert;
+
+
+EXCEPTION
+    WHEN OTHERS THEN
+    pch_err_flag:= 'E';
+    pch_err_msg := 'Error: Inserting fail('||vchTabName||') '||SUBSTR(SQLERRM,1,100);
+END DPD_Insert_RECEIPT_Int_HDR;
+
+PROCEDURE DPD_Insert_RECEIPT_Int_DTL(   p_rec_id     in NUMBER,
+                                        p_batch_no      in VARCHAR2,
+                                        p_loc_code      in VARCHAR2,
+                                        p_bank_code  in VARCHAR2,
+                                        p_bank_br     in VARCHAR2,
+                                        p_pay_date      in DATE,
+                                        p_user          in VARCHAR2,
+                                        pch_err_flag out VARCHAR2,
+                                        pch_err_msg     out VARCHAR2,
+                                        pDBLink         in varchar2,
+                                        EPAYLink IN VARCHAR2) IS
+                                        
+    CUST_PYMT  RefCurTyp;
+    v_Rec_LOCATION_CODE VARCHAR2(4);
+    v_Rec_PAY_DATE DATE;
+    v_Rec_Customer_No varchar2(20);
+    v_Rec_Bill_No varchar2(20);
+    v_Rec_Total_Amt number;
+    v_Rec_VAT_Amt number;
+    v_Rec_Scroll_No number;
+    v_Rec_COLL_CENTRE_CODE         VARCHAR2(100);
+
+    vnmInvoiceNum   NUMBER;
+    vchBillTypeCode VARCHAR2(2);
+    vnmChkDigit        NUMBER;
+    vnmRecCnt         NUMBER := 0;
+
+    vchTabName         VARCHAR2(100);
+
+BEGIN
+
+    pch_err_flag:= 'C';
+    pch_err_msg := NULL;
+    
+    OPEN CUST_PYMT FOR
+     'select a.LOCATION_CODE, a.PAY_DATE, c.ACCOUNT_NUMBER Customer_No, b.BILL_NUMBER Bill_No,
+               nvl(b.PDB_AMOUNT,0)+nvl(b.GOVT_DUTY,0) Total_Amt,
+               b.GOVT_DUTY VAT_Amt, b.SCROLL_NO Scroll_No
+        from EPAY_PAYMENT_MST@'||EPAYLink||' a,
+             EPAY_PAYMENT_DTL@'||EPAYLink||' b,
+             EPAY_UTILITY_BILL@'||EPAYLink||' c
+          where a.batch_no = b.batch_no
+          AND A.PAY_BANK_CODE='''|| p_bank_code||'''
+          and b.BILL_NUMBER = c.BILL_NUMBER
+          and a.LOCATION_CODE ='''|| p_loc_code||'''
+          and c.location_code='''|| p_loc_code||'''
+          and a.PAY_DATE ='''|| p_pay_date||'''';
+
+   LOOP
+     
+       FETCH CUST_PYMT INTO v_Rec_LOCATION_CODE,v_Rec_PAY_DATE, v_Rec_Customer_No,
+       v_Rec_Bill_No,v_Rec_Total_Amt,v_Rec_VAT_Amt,v_Rec_Scroll_No;
+       
+       EXIT WHEN CUST_PYMT%NOTFOUND;
+
+        vnmInvoiceNum := SUBSTR(v_Rec_Bill_No,1,8);
+
+        BEGIN
+
+            vnmSqlSelect:='SELECT Bill_Type_Code, Check_Digit FROM ebc.BC_INVOICE_HDR@'||pDBLink||
+                      ' WHERE Invoice_Num = '''||vnmInvoiceNum||'''';
+                      
+             EXECUTE IMMEDIATE vnmSqlSelect INTO vchBillTypeCode,vnmChkDigit;
+             
+            vchTabName := 'RECEIPT1_INT_DTL Customer No:'||v_Rec_Customer_No|| ' Rec No:'||p_rec_id||' Scroll No:'||v_Rec_Scroll_No;
+            
+            SELECT epay.Dpd_Bc_Inv_Update(p_batch_no,v_Rec_Scroll_No,v_Rec_Total_Amt,'REC') INTO v_Rec_COLL_CENTRE_CODE FROM DUAL;
+
+            vnmRecCnt := vnmRecCnt + 1;
+
+            vnmSqlInsert:=
+            'INSERT INTO ebc.BC_RECEIPT1_INT_DTL@'||pDBLink||
+            '(Rec_Int_Id,           Seq_Num,           Invoice_Num,        Bill_Type_Code,'||
+            'Check_Digit,           Customer_Num,      Coll_Amt,              VAT_Amt,'||
+            'Status_Flag,           Create_Date,            Create_By,          Rec_Status,'||
+            'FORCEFUL_ERROR_FLAG,   MANUAL_FLAG,COLL_CENTRE_CODE )'||
+            'VALUES('||
+            p_rec_id||',             '||v_Rec_Scroll_No||',      '''||vnmInvoiceNum||''',       '''||vchBillTypeCode||''','||
+            vnmChkDigit||',           '''||v_Rec_Customer_No||''',      '||v_Rec_Total_Amt||',          '||v_Rec_VAT_Amt||','||
+            '''M'',                   SYSDATE,           '''||p_user||''',               ''P'','||
+            '''N'',                   ''N'','||v_Rec_COLL_CENTRE_CODE||')';
+
+            EXECUTE IMMEDIATE vnmSqlInsert;
+            
+
+            vchTabName := 'RECEIPT2_INT_DTL Customer No:'||v_Rec_Customer_No|| ' Rec No:'||p_rec_id||' Scroll No:'||v_Rec_Scroll_No;
+
+            vnmSqlInsert:=
+            'INSERT INTO ebc.BC_RECEIPT2_INT_DTL@'||pDBLink||
+            '(Rec_Int_Id,            Seq_Num,           Invoice_Num,         Bill_Type_Code,'||
+            'Check_Digit,           Customer_Num,      Coll_Amt,               VAT_Amt,'||
+            'Status_Flag,           Create_Date,            Create_By,           Rec_Status,'||
+            'FORCEFUL_ERROR_FLAG,   MANUAL_FLAG,COLL_CENTRE_CODE)'||
+            'VALUES('||
+            p_rec_id||',              '||v_Rec_Scroll_No||',      '''||vnmInvoiceNum||''',        '''||vchBillTypeCode||''','||
+            vnmChkDigit||',           '''||v_Rec_Customer_No||''',      '||v_Rec_Total_Amt||',           '||v_Rec_VAT_Amt||','||
+            '''M'',                   SYSDATE,           '''||p_user||''',                ''P'','||
+            '''N'',                   ''N'','||v_Rec_COLL_CENTRE_CODE||')';
+
+
+            EXECUTE IMMEDIATE vnmSqlInsert;
+
+        EXCEPTION
+
+            WHEN NO_DATA_FOUND THEN
+                ROLLBACK;
+                pch_err_flag := 'E';
+                pch_err_msg := 'Invalid Invoice No('||TO_CHAR(vnmInvoiceNum)||')';
+
+        END;
+
+    END LOOP;
+
+    IF vnmRecCnt = 0 THEN
+        pch_err_flag:= 'E';
+        pch_err_msg := 'No data found in main cursor of FPD_RECEIPT_DTL.'||
+                       ' Location : '||p_loc_code||' Batch No: '||p_batch_no||' Bank Code: '||P_bank_code;
+    END IF;
+
+EXCEPTION
+    WHEN OTHERS THEN
+    pch_err_flag:= 'E';
+    pch_err_msg := 'Error: Inserting fail('||vchTabName||') '||SUBSTR(SQLERRM,1,100);
+END DPD_Insert_RECEIPT_Int_DTL;
+
+PROCEDURE DPD_EPAY_PYMT_POSTING_CONT IS
+
+v_Run_Id NUMBER;
+
+BEGIN
+
+        SELECT SEQ_EPAY_RUN_ID.NEXTVAL INTO v_Run_Id FROM DUAL;
+        
+        DPD_PAYMENT_POSTING_MASTER(v_Run_Id);
+
+END DPD_EPAY_PYMT_POSTING_CONT;
+
+PROCEDURE DPD_PYMT_POSTING_JOB_SUBMIT(p_Job_Name VARCHAR2,p_Job_Action VARCHAR2,p_Job_Interval NUMBER) IS
+
+BEGIN
+
+DECLARE
+      
+       BEGIN
+
+            DBMS_SCHEDULER.CREATE_JOB
+            (
+            job_name => p_Job_Name,
+            job_type => 'STORED_PROCEDURE',
+            job_action => p_Job_Action,
+            enabled => false,
+            auto_drop => false,
+            repeat_interval =>'FREQ=MINUTELY;INTERVAL='||p_Job_Interval||'',
+            number_of_arguments => 0
+            );
+                                        
+            DBMS_SCHEDULER.enable(p_Job_Name);
+            
+       END;
+
+END DPD_PYMT_POSTING_JOB_SUBMIT;
+
+end DPG_EPAY_PAY_AUTO_POSTING;
+/

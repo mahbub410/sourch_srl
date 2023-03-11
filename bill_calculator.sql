@@ -1,0 +1,3 @@
+
+
+select round(BILLCALCULATOR.DFN_PF_CALCULATION (:KVARH ,:KVARH_OMF,:KWH , :KWH_OMF,:V_PF),2) from dual

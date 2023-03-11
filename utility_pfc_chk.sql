@@ -1,0 +1,239 @@
+
+SELECT * FROM BC_CUSTOMERS
+WHERE CUSTOMER_NAME LIKE '%No%'
+
+--v02---11kv
+--V03---33kv
+--v04---132kv
+
+select LOSS_CONSUMPTION,BUS_LOSS,LINE_LOSS ,b.METER_NUM,a.METER_READING_ID,a.OPN_READING,a.CLS_READING,ROUND(a.POWER_FACTOR,2) POWER_FACTOR,ROUND(a.NET_POWER_FACTOR,2) NET_POWER_FACTOR, BILLED_VALUE,NET_VALUE,
+round((nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)+nvl(LINE_LOSS,0))) tot_cons 
+FROM BC_METER_READING_CARD_DTL a,bc_customer_meter b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+ --and a.VOLTAGE_CATEGORY_CODE='V03'
+--and a.cust_id=cid(91131075)
+ and a.bill_cycle_code='202206'
+and b.METER_NUM like '%50148864%'
+--and a.METER_READING_ID='1989200'
+
+---WZPDCL--202206
+2011065,2011131
+
+---NESCO--202206-->BD004913  T-1 Auxilary reading same
+2013071,2013222,2013392,2013208,2013207,2013322,
+2013356,2013358,2013390,
+2013374,2013376,2013325,2013153,2013230,2013226,2013292,2013332,2013362
+
+---dpdc--132kv--202206
+2013578,2013576
+
+
+
+
+---dpdc--33kv--202206
+
+
+
+
+
+select a.METER_READING_ID,b.METER_NUM,(nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)) tot_cons ,ROUND(a.POWER_FACTOR,2) POWER_FACTOR
+FROM BC_METER_READING_CARD_DTL a,bc_customer_meter b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+and a.cust_id=cid(9113143)
+ and a.bill_cycle_code='202206'
+ and a.METER_READING_ID NOT in (
+2013071,2013222,2013392,2013208,2013207,2013322,
+2013356,2013358,2013390,
+2013374,2013376,2013325,2013153,2013230,2013226,2013292,2013332,2013362
+ )
+   and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+ 
+ 
+  and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+
+
+
+
+
+
+ 
+   and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+ 
+---WZPDCL--202106
+1969140
+
+
+
+
+--1943577	EXP-08993647E	7561920	0.9
+--1943482	EXP-08993531E	24000	0.9
+
+
+----dhaka div pf-----
+
+
+
+and cust_id in (select cust_id from bc_customers where location_code='GM' 
+and cust_id not in (cid(9113144),cid(9113041),cid(9113040),cid(9113143),cid(9113068)) 
+)
+and NET_POWER_FACTOR<'0.90'
+
+update  bc_meter_reading_card_dtl
+set POWER_FACTOR='0.90',NET_POWER_FACTOR='0.90'
+where bill_cycle_code='202205'
+and cust_id in (select cust_id from bc_customers where location_code='GM' 
+and cust_id not in (cid(9113144),cid(9113041),cid(9113040),cid(9113143),cid(9113068)) 
+)
+  and POWER_FACTOR<'0.895'
+ and NET_POWER_FACTOR<'0.895'
+
+
+select a.METER_READING_ID,b.METER_NUM,(nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)) tot_cons ,ROUND(a.POWER_FACTOR,2) POWER_FACTOR
+FROM BC_METER_READING_CARD_DTL a,bc_customer_meter b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+and a.cust_id=cid(9113041)
+--and a.VOLTAGE_CATEGORY_CODE='V04'
+ and a.bill_cycle_code='202205'
+   and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+ 
+ 
+  and a.METER_READING_ID not in (1999252,1999254,1999122)
+ 
+ 
+ and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+ 
+   and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+ 
+ 
+ and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+ 
+ 
+ and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+ 
+   and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+ 
+ 
+  and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+  
+  
+  and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+
+ and a.METER_READING_ID not in (1999252,1999254,1999122)
+
+
+
+
+
+ ---nesco pf 50501068--0.45,BD004913--0.81
+
+ 
+ 
+
+------------------pf calculation---------------------------
+
+select a.METER_READING_ID,b.METER_NUM,(nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)) tot_cons ,ROUND(a.POWER_FACTOR,2) POWER_FACTOR
+FROM BC_METER_READING_CARD_DTL a,bc_customer_meter b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+--and a.cust_id=cid(91131126)
+ and a.bill_cycle_code='202202'
+ and a.METER_READING_ID  in (1992695,1992696)
+
+---------------------------------------------
+
+
+select LOSS_CONSUMPTION,BUS_LOSS_ADJ,LINE_LOSS_ADJ,BUS_LOSS,LINE_LOSS ,b.METER_NUM,a.METER_READING_ID,a.OPN_READING,a.CLS_READING,ROUND(a.POWER_FACTOR,2) POWER_FACTOR,ROUND(a.NET_POWER_FACTOR,2) NET_POWER_FACTOR, BILLED_VALUE,NET_VALUE,(nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)) tot_cons
+FROM ebc.BC_METER_READING_CARD_DTL a,ebc.bc_customer_meter b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+and a.cust_id=cid(91130537)
+ and a.bill_cycle_code='202205'
+-- and b.METER_NUM like '%8993839%'
+ and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+
+
+
+
+ 
+ and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'
+ 
+ and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+
+-----NESCO---
+ 
+
+
+
+
+
+
+update bc_meter_reading_card_dtl a
+set a.POWER_FACTOR='0.91',a.NET_POWER_FACTOR='0.91'
+ where  a.cust_id=cid(91130401)
+--and a.VOLTAGE_CATEGORY_CODE='V03'
+ and a.bill_cycle_code='202203'
+ AND A.METER_READING_ID IN (
+ 1999269,
+1999194,
+1999279,
+1999115,
+1999225
+)
+ 
+ 
+ and a.POWER_FACTOR is null
+ and a.NET_POWER_FACTOR is null
+ and a.BILLED_VALUE>0
+ 
+ ----
+ 
+ select a.METER_READING_ID,b.METER_NUM,(nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)) tot_cons ,ROUND(a.POWER_FACTOR,2) POWER_FACTOR
+FROM BC_METER_READING_CARD_DTL a,bc_customer_meter b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+ and a.cust_id not in (cid(9113144),cid(9113041),cid(9113040),cid(9113143),cid(9113068))
+ and a.bill_cycle_code='202201'
+ AND A.CUST_ID IN (SELECT CUST_ID FROM BC_CUSTOMERS WHERE LOCATION_CODE='GM')
+   and a.POWER_FACTOR<'0.895'
+ and a.NET_POWER_FACTOR<'0.895'

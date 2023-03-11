@@ -1,0 +1,31 @@
+tns a location wise oral set korta hoba
+
+pora cmd thaka
+
+c dir kora nichar link copy kora dita hoba.
+
+
+---------------------------------------------------------------------
+
+overallprocessing abc 2652491 BC_OVRPROC 201806 SYSADMIN A
+
+printDRBill abc   5242400 DR_BILLPRN 201712 SYSADMIN C
+
+overallfinalization ABC 1108465 BC_OVRFINL 201805 SYSADMIN A
+
+bill ABC 375608 BC_BILLGEN 201701 SYSADMIN C
+
+bill ABC 375607 BC_BILLGEN 201703 SYSADMIN A
+
+despatch ABC 7086021 BC_DESPATC 201212 SYSADMIN C
+
+printDRBill ABC 1710718 DR_BILLPRN 201505 SYSADMIN C
+
+printSRBill ABC 6216542 SR_BILLPRN 201501 HOSSAIN C
+
+mainoffsetting ABC 955373 BC_PYMTOFF 000000 SYSADMIN A
+
+
+BC_LOC_AREA_CHANGE
+
+

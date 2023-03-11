@@ -1,0 +1,8 @@
+
+epayonline.EPAY_BANK_BRANCH
+
+epayonline.EPAY_BANK_BR_ORG_COLL_MAP
+
+epayonline.EPAY_ORG_BANK_MAP
+
+epayonline.EPAY_USER_MST

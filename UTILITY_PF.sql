@@ -1,0 +1,32 @@
+
+EXECUTE SMS.pfc_calculation(:P_org_code,:P_volt_levl)
+
+SELECT  SMS.dfn_pfc_calculation (:P_org_code,:P_volt_levl) FROM DUAL
+
+--power factore find 
+select 54720/sqrt(POWER(54720,2)+POWER(0,2)) from dual
+
+SELECT SUM(TOTAL_AMOUNT) FROM PFC_CAL_MAIN
+WHERE ORGA_NAME='DPDC'
+AND VOLT_LEVL='33KV'
+
+
+--63021  dpdc
+--63506 nesco
+
+INSERT INTO PFC_CAL_TEMP
+select 'NESCO',a.METER_READING_ID,b.METER_NUM,(nvl(LOSS_CONSUMPTION,0)+nvl(BILLED_VALUE,0)) tot_cons,ROUND(a.POWER_FACTOR,2) POWER_FACTOR,'33KV' 
+FROM ebc.BC_METER_READING_CARD_DTL@ubill a,ebc.bc_customer_meter@ubill b
+ WHERE a.CUST_ID=b.CUST_ID
+ and a.METER_SIDE = b.METER_SIDE
+ and a.METER_STATUS = b.METER_STATUS
+ and a.METER_ID=b.EQUIP_ID
+ --and a.READING_TYPE_CODE=2
+ and a.cust_id=63506
+ and a.bill_cycle_code='202006'
+-- and b.METER_NUM like '%8993839%'
+and a.METER_READING_ID  in (
+1927671,1927605,1927754,1927724,1927778,1927723,1927895,1927772,1927875,1927882,1927832,1927931
+)
+
+COMMIT;

@@ -1,0 +1,84 @@
+exp userid=system/system@WEBMTRDB file=E:\ServerFullbackup28\ServerFullbackup28.dmp log=E:\ServerFullbackup28\ServerFullbackup28.log indexes=N buffer=10000000  full=y
+
+D:\app\Administrator\product\11.2.0\dbhome_1\BIN\expdp system/system@ubilldb schemas=system,ebc,emp,sbu,ubill,empower directory=BACKUP_DIR dumpfile=%DATE:~7,2%%DATE:~4,2%%DATE:~-4%_UBILL_BACKUP.dmp logfile=%DATE:~7,2%%DATE:~4,2%%DATE:~-4%_UBILL_BACKUP.log
+
+
+
+Locaton
+
+E:\Serverbackup18\Serverbackup18
+
+E:\server204Fullbackup\server204Fullbackup
+
+E:\ServerFullbackup28\server28backup
+
+E:\server17backup\server17backup
+
+E:\ServerFullbackup203\ServerFullbackup203
+
+
+
+REM Remove files older than 15 days
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server206" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server30" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server205" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\pdb38" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server09" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server23" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server17" /s /m *.* /c "cmd /c Del @path" /d -4
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server203" /s /m *.* /c "cmd /c Del @path" /d -4
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\Epay30" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\Server-169" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server24" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\server28" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+
+forfiles /p "G:\ALL SERVER BACKUP\all server backup\Server26" /s /m *.* /c "cmd /c Del @path" /d -5
+
+
+
+

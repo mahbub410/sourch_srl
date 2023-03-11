@@ -1,0 +1,11 @@
+select b.BILL_CYCLE_CODE,lm.LOCATION_CODE, lm.DESCR location_name, a.BILL_GRP bill_group,count(*) total_customers,b. BILL_DUE_DATE last_payment_date 
+from BC_AREA_CODE a, BC_BILL_CYCLE_CODE b, BC_customers c, bc_location_master lm
+where a.AREA_CODE=b.AREA_CODE
+and a.AREA_CODE=c.AREA_CODE
+and a.LOCATION_CODE=b.LOCATION_CODE
+and a.LOCATION_CODE=c.LOCATION_CODE
+and a.LOCATION_CODE=lm.LOCATION_CODE
+and b.BILL_CYCLE_CODE=201603
+and a.BILL_GRP not in '22'
+group by BILL_CYCLE_CODE,lm.LOCATION_CODE,lm.DESCR,BILL_GRP,BILL_DUE_DATE
+order by BILL_GRP
